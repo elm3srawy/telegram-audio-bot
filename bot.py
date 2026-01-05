@@ -1,50 +1,55 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup
+)
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     MessageHandler,
     CallbackQueryHandler,
     ContextTypes,
-    filters,
+    filters
 )
 import yt_dlp
 import os
 
 TOKEN = os.environ.get("BOT_TOKEN")
 
-# نخزن اللينك مؤقتًا لكل مستخدم
+# نخزن لينك كل مستخدم
 user_links = {}
 
+# /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 أهلاً بيك\n\n"
-        "ابعت لينك الفيديو أو الأغنية 🎵🎬"
+        "📎 ابعت لينك الفيديو أو الأغنية\n"
+        "(YouTube – Facebook – Instagram – TikTok – SoundCloud)"
     )
 
+# استقبال اللينك
 async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text
     user_links[update.effective_user.id] = url
 
     keyboard = [
         [
-            InlineKeyboardButton("🎧 صوت", callback_data="type_audio"),
-            InlineKeyboardButton("🎬 فيديو", callback_data="type_video"),
+            InlineKeyboardButton("🎧 صوت", callback_data="choose_audio"),
+            InlineKeyboardButton("🎬 فيديو", callback_data="choose_video"),
         ]
     ]
 
     await update.message.reply_text(
         "عايز تحمل إيه؟",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
+# اختيار صوت أو فيديو
 async def choose_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    choice = query.data
-    context.user_data["type"] = choice
-
-    if choice == "type_audio":
+    if query.data == "choose_audio":
         keyboard = [
             [
                 InlineKeyboardButton("128 kbps", callback_data="audio_128"),
@@ -63,9 +68,10 @@ async def choose_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.edit_message_text(
         "اختار الجودة:",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
+# التحميل الفعلي
 async def download(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -77,42 +83,45 @@ async def download(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ ابعت اللينك الأول")
         return
 
-    data = query.data
-
     await query.edit_message_text("⏳ جاري التحميل...")
 
     try:
-        if data.startswith("audio"):
+        # 🎧 تحميل صوت
+        if query.data.startswith("audio"):
             ydl_opts = {
                 "format": "bestaudio",
                 "outtmpl": "%(title)s.%(ext)s",
                 "noplaylist": True,
                 "quiet": True,
             }
+
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 filename = ydl.prepare_filename(info)
 
             await query.message.reply_audio(
                 audio=open(filename, "rb"),
-                title=info.get("title"),
+                title=info.get("title")
             )
 
+        # 🎬 تحميل فيديو (MP4 جاهز بدون ffmpeg)
         else:
-            quality = data.split("_")[1]
+            quality = query.data.split("_")[1]
+
             ydl_opts = {
-                "format": f"bestvideo[height<={quality}]+bestaudio/best",
+                "format": f"best[ext=mp4][height<={quality}]/best[ext=mp4]",
                 "outtmpl": "%(title)s.mp4",
                 "noplaylist": True,
                 "quiet": True,
             }
+
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 filename = ydl.prepare_filename(info)
 
             await query.message.reply_video(
                 video=open(filename, "rb"),
-                caption=info.get("title"),
+                caption=info.get("title")
             )
 
         os.remove(filename)
@@ -120,11 +129,12 @@ async def download(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await query.message.reply_text("❌ حصل خطأ أثناء التحميل")
 
+# تشغيل البوت
 app = ApplicationBuilder().token(TOKEN).build()
 
 app.add_handler(CommandHandler("start", start))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link))
-app.add_handler(CallbackQueryHandler(choose_type, pattern="^type_"))
+app.add_handler(CallbackQueryHandler(choose_type, pattern="^choose_"))
 app.add_handler(CallbackQueryHandler(download, pattern="^(audio|video)_"))
 
 app.run_polling()
