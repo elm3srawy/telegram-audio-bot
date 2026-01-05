@@ -2,6 +2,7 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
 import yt_dlp
 import os
+import glob
 
 TOKEN = os.environ.get("BOT_TOKEN")
 
@@ -10,13 +11,10 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
 
     ydl_opts = {
-        'format': 'bestaudio/best',
-        'outtmpl': 'audio.%(ext)s',
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }],
+        "format": "bestaudio",
+        "outtmpl": "audio.%(ext)s",
+        "noplaylist": True,
+        "quiet": True,
     }
 
     await update.message.reply_text("⏳ جاري تحميل الصوت...")
@@ -25,16 +23,19 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
+        file = glob.glob("audio.*")[0]
+
         await context.bot.send_audio(
             chat_id=chat_id,
-            audio=open("audio.mp3", "rb")
+            audio=open(file, "rb")
         )
 
-        os.remove("audio.mp3")
+        os.remove(file)
 
-    except Exception:
-        await update.message.reply_text("❌ فشل تحميل الرابط")
+    except Exception as e:
+        await update.message.reply_text("❌ حصل خطأ أثناء التحميل")
 
 app = ApplicationBuilder().token(TOKEN).build()
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link))
+
 app.run_polling()
